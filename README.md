@@ -1,3 +1,7 @@
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![librosa](https://img.shields.io/pypi/v/librosa?label=librosa)](https://pypi.org/project/librosa/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 # Music Library Analyzer (BPM + Camelot Key + Energy) 🎧
 
 A small Python script that scans a folder of audio files, estimates each track’s **BPM** and **Camelot key** (DJ-friendly), computes a simple **energy score**, and writes a report you can sort for DJ prep / library triage. 🧰
