@@ -65,7 +65,7 @@ def estimate_bpm_from_onset(onset_env, sr, start_bpm, bpm_min, bpm_max, normaliz
     return round(float(tempo), 1)
 
 
-def estimate_camelot_key(y_harm, sr):
+def estimate_key_name(y_harm, sr):
     chroma = librosa.feature.chroma_cqt(y=y_harm, sr=sr)
     chroma_avg = np.mean(chroma, axis=1)
     if not np.any(np.isfinite(chroma_avg)) or np.allclose(chroma_avg, 0):
@@ -88,7 +88,15 @@ def estimate_camelot_key(y_harm, sr):
     else:
         key_name = f"{KEY_LABELS[best_minor]} Minor"
 
-    return CAMELOT_MAP.get(key_name, "Unknown")
+    return key_name
+
+
+def format_key(key_name, key_format):
+    if not key_name or key_name == "Unknown":
+        return "Unknown"
+    if key_format == "camelot":
+        return CAMELOT_MAP.get(key_name, "Unknown")
+    return key_name
 
 
 def get_audio_features_with_error(
@@ -101,6 +109,7 @@ def get_audio_features_with_error(
     bpm_min=70.0,
     bpm_max=200.0,
     normalize_bpm=True,
+    key_format="camelot",
 ):
     try:
         y, sr = librosa.load(
@@ -120,7 +129,8 @@ def get_audio_features_with_error(
             bpm_max=bpm_max,
             normalize=normalize_bpm,
         )
-        camelot_key = estimate_camelot_key(y_harm, sr)
+        key_name = estimate_key_name(y_harm, sr)
+        key_value = format_key(key_name, key_format)
 
         # Energy features (simple heuristics)
         rms = float(np.mean(librosa.feature.rms(y=y)))
@@ -129,7 +139,7 @@ def get_audio_features_with_error(
         flux = float(np.mean(onset_env))
 
         raw_energy = (rms * 40) + (flux * 1.5) + (centroid / 2500)
-        return bpm, camelot_key, float(raw_energy), None
+        return bpm, key_value, float(raw_energy), None
     except Exception as exc:
         return 0.0, "Unknown", 0.0, str(exc)
 
@@ -145,6 +155,7 @@ def _analyze_one_task(task):
         bpm_min,
         bpm_max,
         normalize_bpm,
+        key_format,
     ) = task
 
     title_tag, artist_tag = read_audio_tags(path)
@@ -161,6 +172,7 @@ def _analyze_one_task(task):
         bpm_min=bpm_min,
         bpm_max=bpm_max,
         normalize_bpm=normalize_bpm,
+        key_format=key_format,
     )
     return display_name, title, artist, bpm, camelot, raw_e, error
 
@@ -231,6 +243,26 @@ def camelot_sort_key(camelot_key):
     return (0, int(match.group(1)), match.group(2))
 
 
+def note_key_sort_key(key_name):
+    match = re.fullmatch(r"([A-G](?:#)?)\s+(Major|Minor)", str(key_name).strip())
+    if not match:
+        return (1, 99, 99)
+    root = match.group(1)
+    mode = match.group(2)
+    try:
+        idx = KEY_LABELS.index(root)
+    except ValueError:
+        idx = 99
+    mode_i = 0 if mode == "Major" else 1
+    return (0, idx, mode_i)
+
+
+def key_sort_key(key_value, key_format):
+    if key_format == "camelot":
+        return camelot_sort_key(key_value)
+    return note_key_sort_key(key_value)
+
+
 def format_cell(value, width, align="left"):
     text = "" if value is None else str(value)
     text = text.replace("\r", " ").replace("\n", " ").strip()
@@ -257,6 +289,7 @@ def generate_report(
     bpm_max=200.0,
     normalize_bpm=True,
     jobs=1,
+    key_format="camelot",
     output_filename="music_comprehensive_report.txt",
     sort_by="name",
     verbose=False,
@@ -296,6 +329,7 @@ def generate_report(
             bpm_min,
             bpm_max,
             normalize_bpm,
+            key_format,
         )
         for (display_name, path) in files
     ]
@@ -369,11 +403,21 @@ def generate_report(
     if sort_by == "name":
         raw_results.sort(key=lambda x: x['name'].lower())
     elif sort_by == "key":
-        raw_results.sort(key=lambda x: (camelot_sort_key(
-            x["key"]), x["bpm"], x["name"].lower()))
+        raw_results.sort(
+            key=lambda x: (
+                key_sort_key(x["key"], key_format),
+                x["bpm"],
+                x["name"].lower(),
+            )
+        )
     elif sort_by == "bpm":
-        raw_results.sort(key=lambda x: (
-            x["bpm"], camelot_sort_key(x["key"]), x["name"].lower()))
+        raw_results.sort(
+            key=lambda x: (
+                x["bpm"],
+                key_sort_key(x["key"], key_format),
+                x["name"].lower(),
+            )
+        )
     elif sort_by == "energy":
         raw_results.sort(key=lambda x: (x["energy"], x["name"].lower()))
 
@@ -384,8 +428,9 @@ def generate_report(
         title_w = 45
         artist_w = 30
         bpm_w = 7
-        key_w = 7
+        key_w = 7 if key_format == "camelot" else 12
         energy_w = 6
+        key_label = "CAMELOT" if key_format == "camelot" else "KEY"
 
         header = " | ".join(
             [
@@ -393,7 +438,7 @@ def generate_report(
                 format_cell("TITLE", title_w),
                 format_cell("ARTIST", artist_w),
                 format_cell("BPM", bpm_w, align="right"),
-                format_cell("KEY", key_w),
+                format_cell(key_label, key_w),
                 format_cell("ENERGY", energy_w, align="right"),
             ]
         )
@@ -462,6 +507,12 @@ def parse_args(argv):
         help="Disable half/double-tempo normalization into the bpm-min/bpm-max range.",
     )
     parser.add_argument(
+        "--key-format",
+        choices=["camelot", "key"],
+        default="camelot",
+        help="Output key format (camelot or key).",
+    )
+    parser.add_argument(
         "-j",
         "--jobs",
         type=int,
@@ -503,6 +554,7 @@ def main(argv=None):
         bpm_max=args.bpm_max,
         normalize_bpm=(not args.no_bpm_normalize),
         jobs=args.jobs,
+        key_format=args.key_format,
         output_filename=args.output_filename,
         sort_by=args.sort,
         verbose=args.verbose,

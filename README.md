@@ -21,7 +21,7 @@ It’s heuristic-based (not “perfect music theory”), but fast and practical.
 The report is written to `music_comprehensive_report.txt` and looks like:
 
 ```text
-FILE                                                                   | TITLE                                         | ARTIST                         |    BPM | KEY     | ENERGY
+FILE                                                                   | TITLE                                         | ARTIST                         |    BPM | CAMELOT | ENERGY
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 Folder/track_name.mp3                                                   | Track Name                                    | Artist Name                    |  124.0 | 8A      |      7
 ```
@@ -65,6 +65,9 @@ python3 extrac_analysis.py --music-dir "/path/to/music" --output-dir out --recur
 
 # Use all CPU cores (faster on big libraries)
 python3 extrac_analysis.py --music-dir "/path/to/music" --output-dir out --recursive --sort key --jobs 0
+
+# Output musical key names instead of Camelot
+python3 extrac_analysis.py --music-dir "/path/to/music" --output-dir out --recursive --sort key --key-format key
 ```
 
 ## How it works (high level) 🧠
@@ -81,6 +84,7 @@ Run `python3 extrac_analysis.py --help` for all options. The most useful ones:
 - `--bpm-min` / `--bpm-max`: tune the BPM normalization range (helps fix half/double-time mistakes).
 - `--no-bpm-normalize`: disable BPM normalization if it makes a specific genre worse.
 - `--start-bpm`: initial tempo guess for the tracker (often helps stability).
+- `--key-format`: output `camelot` (default) or `key`.
 - `--jobs`: parallelize across tracks (`0` = all CPU cores).
 - `--sort`: `name` (default), `key`, `bpm`, `energy`.
 
