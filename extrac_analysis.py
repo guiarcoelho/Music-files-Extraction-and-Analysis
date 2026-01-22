@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 from pathlib import Path
 
 import librosa
@@ -211,8 +212,10 @@ def read_audio_tags(file_path):
 
         tags = getattr(audio, "tags", None) or {}
 
-        title = tags.get("title", [""])[0] if isinstance(tags.get("title", [""]), list) else tags.get("title", "")
-        artist = tags.get("artist", [""])[0] if isinstance(tags.get("artist", [""]), list) else tags.get("artist", "")
+        title = tags.get("title", [""])[0] if isinstance(
+            tags.get("title", [""]), list) else tags.get("title", "")
+        artist = tags.get("artist", [""])[0] if isinstance(
+            tags.get("artist", [""]), list) else tags.get("artist", "")
 
         return str(title or "").strip(), str(artist or "").strip()
     except Exception as exc:
@@ -244,7 +247,8 @@ def camelot_sort_key(camelot_key):
 
 
 def note_key_sort_key(key_name):
-    match = re.fullmatch(r"([A-G](?:#)?)\s+(Major|Minor)", str(key_name).strip())
+    match = re.fullmatch(
+        r"([A-G](?:#)?)\s+(Major|Minor)", str(key_name).strip())
     if not match:
         return (1, 99, 99)
     root = match.group(1)
@@ -263,17 +267,63 @@ def key_sort_key(key_value, key_format):
     return note_key_sort_key(key_value)
 
 
-def format_cell(value, width, align="left"):
-    text = "" if value is None else str(value)
-    text = text.replace("\r", " ").replace("\n", " ").strip()
-    if len(text) > width:
-        if width <= 3:
-            text = text[:width]
+def display_width(text):
+    text = "" if text is None else str(text)
+    width = 0
+    for ch in text:
+        if ch in ("\r", "\n"):
+            continue
+        if unicodedata.combining(ch):
+            continue
+        if unicodedata.east_asian_width(ch) in ("W", "F"):
+            width += 2
         else:
-            text = text[: width - 3] + "..."
+            width += 1
+    return width
+
+
+def truncate_to_width(text, width):
+    text = "" if text is None else str(text)
+    text = text.replace("\r", " ").replace("\n", " ").strip()
+    if display_width(text) <= width:
+        return text
+
+    if width <= 3:
+        out = []
+        used = 0
+        for ch in text:
+            ch_w = 0 if unicodedata.combining(ch) else (
+                2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1)
+            if used + ch_w > width:
+                break
+            out.append(ch)
+            used += ch_w
+        return "".join(out)
+
+    limit = width - 3
+    out = []
+    used = 0
+    for ch in text:
+        ch_w = 0 if unicodedata.combining(ch) else (
+            2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1)
+        if used + ch_w > limit:
+            break
+        out.append(ch)
+        used += ch_w
+    return "".join(out).rstrip() + "..."
+
+
+def pad_to_width(text, width, align):
+    text = "" if text is None else str(text)
+    pad = max(0, width - display_width(text))
     if align == "right":
-        return text.rjust(width)
-    return text.ljust(width)
+        return (" " * pad) + text
+    return text + (" " * pad)
+
+
+def format_cell(value, width, align="left"):
+    text = truncate_to_width(value, width)
+    return pad_to_width(text, width, align=align)
 
 
 def generate_report(
@@ -290,7 +340,7 @@ def generate_report(
     normalize_bpm=True,
     jobs=1,
     key_format="camelot",
-    output_filename="music_comprehensive_report.txt",
+    output_filename="Analysis Report.txt",
     sort_by="name",
     verbose=False,
 ):
@@ -342,7 +392,8 @@ def generate_report(
                 f"[{percent:.1f}%] ({index}/{total_files}) Analysing: {display_name[:40]}...          ",
                 end="\r",
             )
-            display_name, title, artist, bpm, camelot, raw_e, error = _analyze_one_task(task)
+            display_name, title, artist, bpm, camelot, raw_e, error = _analyze_one_task(
+                task)
             if error:
                 failures += 1
                 if verbose:
@@ -424,13 +475,36 @@ def generate_report(
     # Write Report
     report_path = os.path.join(output_dir, output_filename)
     with open(report_path, "w", encoding="utf-8") as f:
-        file_w = 70
-        title_w = 45
-        artist_w = 30
-        bpm_w = 7
-        key_w = 7 if key_format == "camelot" else 12
-        energy_w = 6
         key_label = "CAMELOT" if key_format == "camelot" else "KEY"
+
+        max_file_w = 120
+        max_title_w = 70
+        max_artist_w = 45
+        max_key_w = 12
+
+        file_w = min(
+            max_file_w,
+            max(display_width("FILE"), max(display_width(r.get("name", ""))
+                for r in raw_results)),
+        )
+        title_w = min(
+            max_title_w,
+            max(display_width("TITLE"), max(display_width(r.get("title", ""))
+                for r in raw_results)),
+        )
+        artist_w = min(
+            max_artist_w,
+            max(display_width("ARTIST"), max(display_width(
+                r.get("artist", "")) for r in raw_results)),
+        )
+        key_w = min(
+            max_key_w,
+            max(display_width(key_label), max(display_width(r.get("key", ""))
+                for r in raw_results)),
+        )
+
+        bpm_w = max(display_width("BPM"), display_width("200.0"))
+        energy_w = max(display_width("ENERGY"), display_width("10"))
 
         header = " | ".join(
             [
@@ -445,7 +519,8 @@ def generate_report(
         f.write(header + "\n")
         f.write("-" * len(header) + "\n")
         for r in raw_results:
-            bpm_str = f"{float(r['bpm']):.1f}" if r.get("bpm") is not None else ""
+            bpm_str = f"{float(r['bpm']):.1f}" if r.get(
+                "bpm") is not None else ""
             f.write(
                 " | ".join(
                     [
@@ -454,7 +529,8 @@ def generate_report(
                         format_cell(r.get("artist", ""), artist_w),
                         format_cell(bpm_str, bpm_w, align="right"),
                         format_cell(r.get("key", ""), key_w),
-                        format_cell(r.get("energy", ""), energy_w, align="right"),
+                        format_cell(r.get("energy", ""),
+                                    energy_w, align="right"),
                     ]
                 )
                 + "\n"

@@ -26,6 +26,10 @@ FILE                                                                   | TITLE  
 Folder/track_name.mp3                                                   | Track Name                                    | Artist Name                    |  124.0 | 8A      |      7
 ```
 
+Notes:
+- Columns are padded for monospaced display; filenames with certain accent/combining characters can look misaligned in some editors.
+- Very long values may be truncated with `...` to keep the table readable.
+
 ## Requirements 🧩
 
 - Python 3.9+ recommended
