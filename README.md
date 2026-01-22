@@ -1,10 +1,10 @@
-# Music Library Analyzer (BPM + Camelot Key + Energy)
+# Music Library Analyzer (BPM + Camelot Key + Energy) 🎧
 
-A small Python script that scans a folder of audio files, estimates each track’s **BPM** and **Camelot key** (DJ-friendly), computes a simple **energy score**, and writes a report you can sort for DJ prep / library triage.
+A small Python script that scans a folder of audio files, estimates each track’s **BPM** and **Camelot key** (DJ-friendly), computes a simple **energy score**, and writes a report you can sort for DJ prep / library triage. 🧰
 
-It’s heuristic-based (not “perfect music theory”), but fast and practical.
+It’s heuristic-based (not “perfect music theory”), but fast and practical. ⚡️
 
-## What it does
+## What it does ✅
 
 - Reads audio files from a folder (`.mp3`, `.wav`, `.flac`, `.m4a`)
 - Estimates tempo (BPM) from percussive onset strength, and optionally normalizes common half/double-time mistakes into a target BPM range
@@ -12,7 +12,7 @@ It’s heuristic-based (not “perfect music theory”), but fast and practical.
 - Computes an energy score (1–10) from RMS loudness + onset strength + spectral centroid (normalized within the analyzed folder)
 - Outputs `music_comprehensive_report.txt` (sorted by name by default)
 
-## Output format
+## Output format 📄
 
 The report is written to `music_comprehensive_report.txt` and looks like:
 
@@ -22,7 +22,7 @@ FILE NAME                                          | BPM      | KEY      | ENERG
 Folder/track_name.mp3                              | 124.0    | 8A       | 7
 ```
 
-## Requirements
+## Requirements 🧩
 
 - Python 3.9+ recommended
 - `librosa` (brings in `numpy` and other scientific deps)
@@ -39,7 +39,7 @@ python3 -m pip install librosa
 Notes:
 - MP3 decoding may require system support (commonly `ffmpeg`). On macOS: `brew install ffmpeg`.
 
-## Quick start
+## Quick start 🚀
 
 Run it with CLI flags:
 
@@ -58,13 +58,13 @@ Common useful options:
 python3 extrac_analysis.py --music-dir "/path/to/music" --output-dir out --recursive --sort key
 ```
 
-## How it works (high level)
+## How it works (high level) 🧠
 
 - **BPM**: percussive component → onset strength → `librosa.beat.beat_track` (optionally normalized to your BPM range).
 - **Key/Camelot**: harmonic component → `chroma_cqt` → key-profile correlation (major/minor) → Camelot mapping.
 - **Energy (1–10)**: RMS loudness + onset strength + spectral centroid, normalized within the analyzed folder.
 
-## Customization
+## Customization 🎛️
 
 Run `python3 extrac_analysis.py --help` for all options. The most useful ones:
 
@@ -74,7 +74,7 @@ Run `python3 extrac_analysis.py --help` for all options. The most useful ones:
 - `--start-bpm`: initial tempo guess for the tracker (often helps stability).
 - `--sort`: `name` (default), `key`, `bpm`, `energy`.
 
-## Limitations / gotchas
+## Limitations / gotchas ⚠️
 
 - BPM and key detection are approximate, especially for:
   - live drummers / fluctuating tempo
@@ -89,7 +89,7 @@ If BPM is consistently off for your music:
 - Try a narrower `--bpm-min/--bpm-max` closer to your genre.
 - If you’re getting 70 instead of 140 (or vice versa), keep normalization enabled (default).
 
-## Contributing
+## Contributing 🤝
 
 PRs and issues are welcome. Nice next steps if you want to extend it:
 
@@ -98,7 +98,6 @@ PRs and issues are welcome. Nice next steps if you want to extend it:
 - Add a confidence score for BPM/key
 - Improve key detection further (more robust profiles / tuning estimation)
 
-## License
+## License 📜
 
 Published under the MIT License. Feel free to use and adapt!
-
