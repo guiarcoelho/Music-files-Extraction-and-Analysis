@@ -29,6 +29,7 @@ KRUMHANSL_MINOR = np.array(
     dtype=float,
 )
 
+
 def _as_scalar(x, default=0.0):
     arr = np.asarray(x).reshape(-1)
     if arr.size == 0:
@@ -95,16 +96,17 @@ def get_audio_features(
     file_path,
     *,
     sr=22050,
-    offset=10.0,
-    duration=120.0,
+    offset=30.0,
+    duration=120,
     start_bpm=120.0,
-    bpm_min=70.0,
+    bpm_min=100.0,
     bpm_max=200.0,
     normalize_bpm=True,
     verbose=False,
 ):
     try:
-        y, sr = librosa.load(file_path, sr=sr, offset=offset, duration=duration)
+        y, sr = librosa.load(
+            file_path, sr=sr, offset=offset, duration=duration)
 
         bpm = estimate_bpm(
             y,
@@ -118,8 +120,10 @@ def get_audio_features(
 
         # Energy features (simple heuristics)
         rms = float(np.mean(librosa.feature.rms(y=y)))
-        centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
-        onset_env = librosa.onset.onset_strength(y=librosa.effects.percussive(y), sr=sr)
+        centroid = float(
+            np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
+        onset_env = librosa.onset.onset_strength(
+            y=librosa.effects.percussive(y), sr=sr)
         flux = float(np.mean(onset_env))
 
         raw_energy = (rms * 40) + (flux * 1.5) + (centroid / 2500)
@@ -178,7 +182,8 @@ def generate_report(
         output_dir = os.getcwd()
     os.makedirs(output_dir, exist_ok=True)
 
-    files = list(iter_audio_files(music_dir, valid_exts=valid_exts, recursive=recursive))
+    files = list(iter_audio_files(
+        music_dir, valid_exts=valid_exts, recursive=recursive))
     total_files = len(files)
     if total_files == 0:
         print("No music files found.")
@@ -209,7 +214,8 @@ def generate_report(
         )
         if bpm == 0.0 and camelot == "Unknown" and raw_e == 0.0:
             failures += 1
-        raw_results.append({'name': display_name, 'bpm': bpm, 'key': camelot, 'raw_energy': raw_e})
+        raw_results.append({'name': display_name, 'bpm': bpm,
+                           'key': camelot, 'raw_energy': raw_e})
 
     # --- ENERGY NORMALIZATION (Reliability Step) ---
     # Convert raw scores into a 1-10 scale based on the range of the current folder
@@ -230,9 +236,11 @@ def generate_report(
     if sort_by == "name":
         raw_results.sort(key=lambda x: x['name'].lower())
     elif sort_by == "key":
-        raw_results.sort(key=lambda x: (camelot_sort_key(x["key"]), x["bpm"], x["name"].lower()))
+        raw_results.sort(key=lambda x: (camelot_sort_key(
+            x["key"]), x["bpm"], x["name"].lower()))
     elif sort_by == "bpm":
-        raw_results.sort(key=lambda x: (x["bpm"], camelot_sort_key(x["key"]), x["name"].lower()))
+        raw_results.sort(key=lambda x: (
+            x["bpm"], camelot_sort_key(x["key"]), x["name"].lower()))
     elif sort_by == "energy":
         raw_results.sort(key=lambda x: (x["energy"], x["name"].lower()))
 
@@ -261,11 +269,16 @@ def parse_args(argv):
     parser = argparse.ArgumentParser(
         description="Analyze a music folder for BPM, Camelot key, and an energy score.",
     )
-    parser.add_argument("--music-dir", default=MUSIC_LOCATION, help="Folder containing audio files.")
-    parser.add_argument("--output-dir", default=REPORT_LOCATION, help="Folder to write the report into.")
-    parser.add_argument("--recursive", action="store_true", help="Scan music-dir recursively.")
-    parser.add_argument("--sr", type=int, default=22050, help="Sample rate used for analysis.")
-    parser.add_argument("--offset", type=float, default=10.0, help="Start time (seconds) for analysis.")
+    parser.add_argument("--music-dir", default=MUSIC_LOCATION,
+                        help="Folder containing audio files.")
+    parser.add_argument("--output-dir", default=REPORT_LOCATION,
+                        help="Folder to write the report into.")
+    parser.add_argument("--recursive", action="store_true",
+                        help="Scan music-dir recursively.")
+    parser.add_argument("--sr", type=int, default=22050,
+                        help="Sample rate used for analysis.")
+    parser.add_argument("--offset", type=float, default=10.0,
+                        help="Start time (seconds) for analysis.")
     parser.add_argument(
         "--duration",
         type=float,
@@ -278,8 +291,10 @@ def parse_args(argv):
         default=120.0,
         help="Initial BPM guess for the tracker (helps stabilize results).",
     )
-    parser.add_argument("--bpm-min", type=float, default=70.0, help="Minimum BPM for normalization.")
-    parser.add_argument("--bpm-max", type=float, default=200.0, help="Maximum BPM for normalization.")
+    parser.add_argument("--bpm-min", type=float, default=70.0,
+                        help="Minimum BPM for normalization.")
+    parser.add_argument("--bpm-max", type=float, default=200.0,
+                        help="Maximum BPM for normalization.")
     parser.add_argument(
         "--no-bpm-normalize",
         action="store_true",
@@ -296,7 +311,8 @@ def parse_args(argv):
         default="music_comprehensive_report.txt",
         help="Output report filename (written inside output-dir).",
     )
-    parser.add_argument("--verbose", action="store_true", help="Print per-file errors to stderr.")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Print per-file errors to stderr.")
     return parser.parse_args(argv)
 
 
