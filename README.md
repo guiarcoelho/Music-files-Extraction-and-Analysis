@@ -60,6 +60,9 @@ Common useful options:
 ```bash
 # Sort by Camelot key then BPM, and scan subfolders
 python3 extrac_analysis.py --music-dir "/path/to/music" --output-dir out --recursive --sort key
+
+# Use all CPU cores (faster on big libraries)
+python3 extrac_analysis.py --music-dir "/path/to/music" --output-dir out --recursive --sort key --jobs 0
 ```
 
 ## How it works (high level) 🧠
@@ -76,6 +79,7 @@ Run `python3 extrac_analysis.py --help` for all options. The most useful ones:
 - `--bpm-min` / `--bpm-max`: tune the BPM normalization range (helps fix half/double-time mistakes).
 - `--no-bpm-normalize`: disable BPM normalization if it makes a specific genre worse.
 - `--start-bpm`: initial tempo guess for the tracker (often helps stability).
+- `--jobs`: parallelize across tracks (`0` = all CPU cores).
 - `--sort`: `name` (default), `key`, `bpm`, `energy`.
 
 ## Limitations / gotchas ⚠️
@@ -104,4 +108,4 @@ PRs and issues are welcome. Nice next steps if you want to extend it:
 
 ## License 📜
 
-Published under the MIT License. Feel free to use and adapt!
+Published under the MIT License. See `LICENSE`.

@@ -1,4 +1,5 @@
 import argparse
+import concurrent.futures
 import os
 import re
 import sys
@@ -50,9 +51,7 @@ def normalize_tempo(tempo, bpm_min, bpm_max):
     return tempo
 
 
-def estimate_bpm(y, sr, start_bpm, bpm_min, bpm_max, normalize=True):
-    y_perc = librosa.effects.percussive(y)
-    onset_env = librosa.onset.onset_strength(y=y_perc, sr=sr)
+def estimate_bpm_from_onset(onset_env, sr, start_bpm, bpm_min, bpm_max, normalize=True):
     tempo, _ = librosa.beat.beat_track(
         onset_envelope=onset_env,
         sr=sr,
@@ -65,8 +64,7 @@ def estimate_bpm(y, sr, start_bpm, bpm_min, bpm_max, normalize=True):
     return round(float(tempo), 1)
 
 
-def estimate_camelot_key(y, sr):
-    y_harm = librosa.effects.harmonic(y)
+def estimate_camelot_key(y_harm, sr):
     chroma = librosa.feature.chroma_cqt(y=y_harm, sr=sr)
     chroma_avg = np.mean(chroma, axis=1)
     if not np.any(np.isfinite(chroma_avg)) or np.allclose(chroma_avg, 0):
@@ -92,46 +90,72 @@ def estimate_camelot_key(y, sr):
     return CAMELOT_MAP.get(key_name, "Unknown")
 
 
-def get_audio_features(
+def get_audio_features_with_error(
     file_path,
     *,
     sr=22050,
-    offset=30.0,
-    duration=120,
+    offset=10.0,
+    duration=120.0,
     start_bpm=120.0,
-    bpm_min=100.0,
+    bpm_min=70.0,
     bpm_max=200.0,
     normalize_bpm=True,
-    verbose=False,
 ):
     try:
         y, sr = librosa.load(
             file_path, sr=sr, offset=offset, duration=duration)
 
-        bpm = estimate_bpm(
-            y,
+        # Optimization (1): compute harmonic/percussive separation once.
+        y_harm, y_perc = librosa.effects.hpss(y)
+
+        # Optimization (2): compute onset envelope once and reuse it for BPM + energy.
+        onset_env = librosa.onset.onset_strength(y=y_perc, sr=sr)
+
+        bpm = estimate_bpm_from_onset(
+            onset_env,
             sr,
             start_bpm=start_bpm,
             bpm_min=bpm_min,
             bpm_max=bpm_max,
             normalize=normalize_bpm,
         )
-        camelot_key = estimate_camelot_key(y, sr)
+        camelot_key = estimate_camelot_key(y_harm, sr)
 
         # Energy features (simple heuristics)
         rms = float(np.mean(librosa.feature.rms(y=y)))
         centroid = float(
             np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
-        onset_env = librosa.onset.onset_strength(
-            y=librosa.effects.percussive(y), sr=sr)
         flux = float(np.mean(onset_env))
 
         raw_energy = (rms * 40) + (flux * 1.5) + (centroid / 2500)
-        return bpm, camelot_key, float(raw_energy)
+        return bpm, camelot_key, float(raw_energy), None
     except Exception as exc:
-        if verbose:
-            print(f"Failed to analyse {file_path}: {exc}", file=sys.stderr)
-        return 0.0, "Unknown", 0.0
+        return 0.0, "Unknown", 0.0, str(exc)
+
+
+def _analyze_one_task(task):
+    (
+        display_name,
+        path,
+        sr,
+        offset,
+        duration,
+        start_bpm,
+        bpm_min,
+        bpm_max,
+        normalize_bpm,
+    ) = task
+    bpm, camelot, raw_e, error = get_audio_features_with_error(
+        path,
+        sr=sr,
+        offset=offset,
+        duration=duration,
+        start_bpm=start_bpm,
+        bpm_min=bpm_min,
+        bpm_max=bpm_max,
+        normalize_bpm=normalize_bpm,
+    )
+    return display_name, bpm, camelot, raw_e, error
 
 
 def iter_audio_files(music_dir, valid_exts, recursive):
@@ -170,6 +194,7 @@ def generate_report(
     bpm_min=70.0,
     bpm_max=200.0,
     normalize_bpm=True,
+    jobs=1,
     output_filename="music_comprehensive_report.txt",
     sort_by="name",
     verbose=False,
@@ -191,31 +216,77 @@ def generate_report(
 
     raw_results = []
     start_time = time.time()
-    print(f"--- Starting Advanced Analysis of {total_files} files ---")
+    print(f"--- Starting Analysis of {total_files} files ---")
     failures = 0
 
-    for index, (display_name, path) in enumerate(files, start=1):
-        percent = (index / total_files) * 100
-        print(
-            f"[{percent:.1f}%] ({index}/{total_files}) Analysing: {display_name[:40]}...          ",
-            end="\r",
-        )
+    jobs = int(jobs)
+    if jobs == 0:
+        jobs = os.cpu_count() or 1
 
-        bpm, camelot, raw_e = get_audio_features(
+    tasks = [
+        (
+            display_name,
             path,
-            sr=sr,
-            offset=offset,
-            duration=duration,
-            start_bpm=start_bpm,
-            bpm_min=bpm_min,
-            bpm_max=bpm_max,
-            normalize_bpm=normalize_bpm,
-            verbose=verbose,
+            sr,
+            offset,
+            duration,
+            start_bpm,
+            bpm_min,
+            bpm_max,
+            normalize_bpm,
         )
-        if bpm == 0.0 and camelot == "Unknown" and raw_e == 0.0:
-            failures += 1
-        raw_results.append({'name': display_name, 'bpm': bpm,
-                           'key': camelot, 'raw_energy': raw_e})
+        for (display_name, path) in files
+    ]
+
+    if jobs <= 1 or total_files <= 1:
+        for index, task in enumerate(tasks, start=1):
+            display_name = task[0]
+            percent = (index / total_files) * 100
+            print(
+                f"[{percent:.1f}%] ({index}/{total_files}) Analysing: {display_name[:40]}...          ",
+                end="\r",
+            )
+            display_name, bpm, camelot, raw_e, error = _analyze_one_task(task)
+            if error:
+                failures += 1
+                if verbose:
+                    print(
+                        f"\nFailed to analyse {display_name}: {error}", file=sys.stderr)
+            raw_results.append(
+                {'name': display_name, 'bpm': bpm, 'key': camelot, 'raw_energy': raw_e})
+    else:
+        # Optimization (6): parallelize across tracks using multiple processes.
+        completed = 0
+        max_workers = min(jobs, total_files)
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            future_to_name = {executor.submit(
+                _analyze_one_task, task): task[0] for task in tasks}
+            for future in concurrent.futures.as_completed(future_to_name):
+                display_name = future_to_name[future]
+                completed += 1
+                percent = (completed / total_files) * 100
+                print(
+                    f"[{percent:.1f}%] ({completed}/{total_files}) Analysing: {display_name[:40]}...          ",
+                    end="\r",
+                )
+                try:
+                    display_name, bpm, camelot, raw_e, error = future.result()
+                except Exception as exc:  # pragma: no cover
+                    failures += 1
+                    if verbose:
+                        print(
+                            f"\nFailed to analyse {display_name}: {exc}", file=sys.stderr)
+                    raw_results.append(
+                        {'name': display_name, 'bpm': 0.0, 'key': "Unknown", 'raw_energy': 0.0})
+                    continue
+
+                if error:
+                    failures += 1
+                    if verbose:
+                        print(
+                            f"\nFailed to analyse {display_name}: {error}", file=sys.stderr)
+                raw_results.append(
+                    {'name': display_name, 'bpm': bpm, 'key': camelot, 'raw_energy': raw_e})
 
     # --- ENERGY NORMALIZATION (Reliability Step) ---
     # Convert raw scores into a 1-10 scale based on the range of the current folder
@@ -301,6 +372,13 @@ def parse_args(argv):
         help="Disable half/double-tempo normalization into the bpm-min/bpm-max range.",
     )
     parser.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=1,
+        help="Number of worker processes (use 0 for all CPU cores).",
+    )
+    parser.add_argument(
         "--sort",
         choices=["name", "key", "bpm", "energy"],
         default="name",
@@ -334,6 +412,7 @@ def main(argv=None):
         bpm_min=args.bpm_min,
         bpm_max=args.bpm_max,
         normalize_bpm=(not args.no_bpm_normalize),
+        jobs=args.jobs,
         output_filename=args.output_filename,
         sort_by=args.sort,
         verbose=args.verbose,
