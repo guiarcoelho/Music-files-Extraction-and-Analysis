@@ -18,7 +18,7 @@ It’s heuristic-based (not “perfect music theory”), but fast and practical.
 
 ## Output format 📄
 
-The report is written to `music_comprehensive_report.txt` and looks like:
+The report is written to `Analysis Report.txt` and looks like:
 
 ```text
 FILE                                                                   | TITLE                                         | ARTIST                         |    BPM | CAMELOT | ENERGY

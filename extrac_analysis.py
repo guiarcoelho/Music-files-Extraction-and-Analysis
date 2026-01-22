@@ -603,7 +603,7 @@ def parse_args(argv):
     )
     parser.add_argument(
         "--output-filename",
-        default="music_comprehensive_report.txt",
+        default="Analysis Report.txt",
         help="Output report filename (written inside output-dir).",
     )
     parser.add_argument("--verbose", action="store_true",
