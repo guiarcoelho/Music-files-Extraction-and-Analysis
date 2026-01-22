@@ -1,4 +1,4 @@
-# Music Library Analyzer (BPM + Camelot Key + Energy) 🎧
+# Music Library Analyzer (BPM + Key + Energy) 🎧
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![librosa](https://img.shields.io/pypi/v/librosa?label=librosa)](https://pypi.org/project/librosa/)
