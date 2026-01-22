@@ -21,15 +21,16 @@ It’s heuristic-based (not “perfect music theory”), but fast and practical.
 The report is written to `music_comprehensive_report.txt` and looks like:
 
 ```text
-FILE NAME                                          | BPM      | KEY      | ENERGY (1-10)
-------------------------------------------------------------------------------------------
-Folder/track_name.mp3                              | 124.0    | 8A       | 7
+FILE                                                                   | TITLE                                         | ARTIST                         |    BPM | KEY     | ENERGY
+------------------------------------------------------------------------------------------------------------------------------------------------------
+Folder/track_name.mp3                                                   | Track Name                                    | Artist Name                    |  124.0 | 8A      |      7
 ```
 
 ## Requirements 🧩
 
 - Python 3.9+ recommended
 - `librosa` (brings in `numpy` and other scientific deps)
+- Optional: `mutagen` (to read track `TITLE` / `ARTIST` tags from files; otherwise the script falls back to best-effort filename parsing)
 
 Install dependencies:
 
@@ -38,6 +39,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install --upgrade pip
 python3 -m pip install librosa
+python3 -m pip install mutagen
 ```
 
 Notes:

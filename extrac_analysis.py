@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import time
+from pathlib import Path
 
 import librosa
 import numpy as np
@@ -145,6 +146,12 @@ def _analyze_one_task(task):
         bpm_max,
         normalize_bpm,
     ) = task
+
+    title_tag, artist_tag = read_audio_tags(path)
+    title_guess, artist_guess = infer_title_artist_from_filename(display_name)
+    title = title_tag or title_guess
+    artist = artist_tag or artist_guess
+
     bpm, camelot, raw_e, error = get_audio_features_with_error(
         path,
         sr=sr,
@@ -155,7 +162,49 @@ def _analyze_one_task(task):
         bpm_max=bpm_max,
         normalize_bpm=normalize_bpm,
     )
-    return display_name, bpm, camelot, raw_e, error
+    return display_name, title, artist, bpm, camelot, raw_e, error
+
+
+def infer_title_artist_from_filename(display_name):
+    base = Path(display_name).name
+    base = os.path.splitext(base)[0]
+    base = re.sub(r"^\s*\d+\s*-\s*", "", base).strip()
+
+    for sep in (" - ", " – ", " — "):
+        if sep in base:
+            left, right = base.split(sep, 1)
+            artist = left.strip()
+            title = right.strip()
+            if title and artist:
+                return title, artist
+            break
+    return base, ""
+
+
+def read_audio_tags(file_path):
+    """
+    Best-effort metadata extraction.
+
+    Uses Mutagen if available, otherwise returns empty strings.
+    """
+    try:
+        from mutagen import File as MutagenFile  # type: ignore
+    except Exception:
+        return "", ""
+
+    try:
+        audio = MutagenFile(file_path, easy=True)
+        if audio is None:
+            return "", ""
+
+        tags = getattr(audio, "tags", None) or {}
+
+        title = tags.get("title", [""])[0] if isinstance(tags.get("title", [""]), list) else tags.get("title", "")
+        artist = tags.get("artist", [""])[0] if isinstance(tags.get("artist", [""]), list) else tags.get("artist", "")
+
+        return str(title or "").strip(), str(artist or "").strip()
+    except Exception as exc:
+        return "", ""
 
 
 def iter_audio_files(music_dir, valid_exts, recursive):
@@ -180,6 +229,19 @@ def camelot_sort_key(camelot_key):
     if not match:
         return (1, 99, "Z")
     return (0, int(match.group(1)), match.group(2))
+
+
+def format_cell(value, width, align="left"):
+    text = "" if value is None else str(value)
+    text = text.replace("\r", " ").replace("\n", " ").strip()
+    if len(text) > width:
+        if width <= 3:
+            text = text[:width]
+        else:
+            text = text[: width - 3] + "..."
+    if align == "right":
+        return text.rjust(width)
+    return text.ljust(width)
 
 
 def generate_report(
@@ -246,14 +308,14 @@ def generate_report(
                 f"[{percent:.1f}%] ({index}/{total_files}) Analysing: {display_name[:40]}...          ",
                 end="\r",
             )
-            display_name, bpm, camelot, raw_e, error = _analyze_one_task(task)
+            display_name, title, artist, bpm, camelot, raw_e, error = _analyze_one_task(task)
             if error:
                 failures += 1
                 if verbose:
                     print(
                         f"\nFailed to analyse {display_name}: {error}", file=sys.stderr)
             raw_results.append(
-                {'name': display_name, 'bpm': bpm, 'key': camelot, 'raw_energy': raw_e})
+                {'name': display_name, 'title': title, 'artist': artist, 'bpm': bpm, 'key': camelot, 'raw_energy': raw_e})
     else:
         # Optimization (6): parallelize across tracks using multiple processes.
         completed = 0
@@ -270,14 +332,14 @@ def generate_report(
                     end="\r",
                 )
                 try:
-                    display_name, bpm, camelot, raw_e, error = future.result()
+                    display_name, title, artist, bpm, camelot, raw_e, error = future.result()
                 except Exception as exc:  # pragma: no cover
                     failures += 1
                     if verbose:
                         print(
                             f"\nFailed to analyse {display_name}: {exc}", file=sys.stderr)
                     raw_results.append(
-                        {'name': display_name, 'bpm': 0.0, 'key': "Unknown", 'raw_energy': 0.0})
+                        {'name': display_name, 'title': "", 'artist': "", 'bpm': 0.0, 'key': "Unknown", 'raw_energy': 0.0})
                     continue
 
                 if error:
@@ -286,7 +348,7 @@ def generate_report(
                         print(
                             f"\nFailed to analyse {display_name}: {error}", file=sys.stderr)
                 raw_results.append(
-                    {'name': display_name, 'bpm': bpm, 'key': camelot, 'raw_energy': raw_e})
+                    {'name': display_name, 'title': title, 'artist': artist, 'bpm': bpm, 'key': camelot, 'raw_energy': raw_e})
 
     # --- ENERGY NORMALIZATION (Reliability Step) ---
     # Convert raw scores into a 1-10 scale based on the range of the current folder
@@ -318,12 +380,40 @@ def generate_report(
     # Write Report
     report_path = os.path.join(output_dir, output_filename)
     with open(report_path, "w", encoding="utf-8") as f:
-        f.write(
-            f"{'FILE NAME':<50} | {'BPM':<8} | {'KEY':<8} | {'ENERGY (1-10)'}\n")
-        f.write("-" * 90 + "\n")
+        file_w = 70
+        title_w = 45
+        artist_w = 30
+        bpm_w = 7
+        key_w = 7
+        energy_w = 6
+
+        header = " | ".join(
+            [
+                format_cell("FILE", file_w),
+                format_cell("TITLE", title_w),
+                format_cell("ARTIST", artist_w),
+                format_cell("BPM", bpm_w, align="right"),
+                format_cell("KEY", key_w),
+                format_cell("ENERGY", energy_w, align="right"),
+            ]
+        )
+        f.write(header + "\n")
+        f.write("-" * len(header) + "\n")
         for r in raw_results:
+            bpm_str = f"{float(r['bpm']):.1f}" if r.get("bpm") is not None else ""
             f.write(
-                f"{r['name'][:49]:<50} | {r['bpm']:<8} | {r['key']:<8} | {r['energy']}\n")
+                " | ".join(
+                    [
+                        format_cell(r.get("name", ""), file_w),
+                        format_cell(r.get("title", ""), title_w),
+                        format_cell(r.get("artist", ""), artist_w),
+                        format_cell(bpm_str, bpm_w, align="right"),
+                        format_cell(r.get("key", ""), key_w),
+                        format_cell(r.get("energy", ""), energy_w, align="right"),
+                    ]
+                )
+                + "\n"
+            )
 
     print(f"\n\nSuccess! Completed in {(time.time() - start_time)/60:.1f}m.")
     if failures:
